@@ -1,77 +1,165 @@
-#--- Ship computer sufficient for problem 5 ---
-#
-# - supports console I/O
-# - supports immediate and position parameter modes
-# - has debug and dump flags
-#
+#--- Ship computer for problem 5 parts 1 and 2 ---
 
-def writeBack(memory, location, value):
-    memory[location] = value
+def writeMemory( memory, location, value ):
+    try:
+        memory[location] = value
+    except IndexError:
+        print("\nIndexError in writeMemory")
+        exit()
     return None
 
-def loadByMode(memory, parameterValue, mode):
-    POSITION_MODE = 0
-    IMMEDIATE_MODE = 1
-
-    if (mode == POSITION_MODE):
-        result = memory[parameterValue]
-    elif (mode == IMMEDIATE_MODE):
+def readMemory( memory, parameterValue, mode ):
+    if (mode == 0): # position mode
+        try:
+            result = memory[parameterValue]
+        except IndexError:
+            print("\nIndexError in readMemory")
+            exit()
+    elif (mode == 1): # immediate mode
         result = parameterValue
     else:
-        print ("Unknown addressing mode: ", mode)
+        print ("\nScript notice: Unknown addressing mode: ", mode)
         exit()
-
     return result
 
-def parseInstruction( memory, pc ):
-    paddedInstruction = '00000' + str(memory[pc])
-    instruction = {}
+def getOpcode( memory, pc ):
+    pad = '00000' + str(memory[pc])
+    return int(pad[-2:])
 
-    opcode = int(paddedInstruction[-2:])
-    instruction["opcode"] = opcode
+def getParameters( memory, pc, operationClass ):
+    pad = '00000' + str(memory[pc])
 
-    if (opcode == 1):
-        instruction["op"] = "Add"
-        instruction["opClass"] = "Arithmetic"
-    elif (opcode == 2):
-        instruction["op"] = "Multiply"
-        instruction["opClass"] = "Arithmetic"
-    elif (opcode == 3):
-        instruction["op"] = "Input"
-        instruction["opClass"] = "Input-Output"
-    elif (opcode == 4):
-        instruction["op"] = "Output"
-        instruction["opClass"] = "Input-Output"
-    elif (opcode == 99):
-        instruction["op"] = "Halt"
-        instruction["opClass"] = "Control"
+    if (operationClass == "ALU"):
+        p1Value = readMemory(memory, memory[pc + 1], int(pad[-3]))
+        p2Value = readMemory(memory, memory[pc + 2], int(pad[-4]))
+        resultLocation = memory[pc + 3]
+    elif (operationClass == "IO"):
+        p1Value = readMemory(memory, memory[pc + 1], int(pad[-3]))
+        p2Value = 0
+        resultLocation = 0
+    elif (operationClass == "JUMP"):
+        p1Value = readMemory(memory, memory[pc + 1], int(pad[-3]))
+        p2Value = readMemory(memory, memory[pc + 2], int(pad[-4]))
+        resultLocation = 0
     else:
-        instruction["op"] = "Illegal operation"
-
-    instruction["p1Mode"] = None
-    instruction["p1Value"] = None
-    instruction["p2Mode"] = None
-    instruction["p2Value"] = None
-    instruction["resultLocation"] = None
-    instruction["increment"] = None
-
-    if (instruction["opClass"] == "Input-Output"):
-        instruction["resultLocation"] = memory[pc + 1]
-        instruction["increment"] = 2
-    elif (instruction["opClass"] == "Control"):
-        instruction["increment"] = 0
-    elif (instruction["opClass"] == "Arithmetic"):
-        instruction["p1Mode"] = int(paddedInstruction[-3])
-        instruction["p1Value"] = loadByMode(memory, memory[pc + 1], instruction["p1Mode"])
-        instruction["p2Mode"] = int(paddedInstruction[-4])
-        instruction["p2Value"] = loadByMode(memory, memory[pc + 2], instruction["p2Mode"])
-        instruction["resultLocation"] = memory[pc + 3]
-        instruction["increment"] = 4
-    else:
-        print("Operation class not implemented.")
+        print("\nUnimplemented operation class ", operationClass)
         exit()
 
-    return instruction
+    return (0, p1Value, p2Value, resultLocation)
+
+def getAluParameters( memory, pc ):
+    return getParameters( memory, pc, operationClass="ALU" )
+
+def getIoParameters( memory, pc ):
+    return getParameters( memory, pc, operationClass="IO" )
+
+def getJumpParameters( memory, pc ):
+    return getParameters( memory, pc, operationClass="JUMP" )
+
+def noOp( memory, pc ):
+    print("\nNo-op not implemented.")
+    exit()
+    return None
+
+def addOp( memory, pc ):
+    p = getAluParameters( memory, pc )
+    writeMemory(memory, p[3], p[1] + p[2])
+    return pc + 4
+
+def multiplyOp( memory, pc ):
+    p = getAluParameters( memory, pc )
+    writeMemory(memory, p[3], p[1] * p[2])
+    return pc + 4
+
+def inputOp( memory, pc ):
+    value = int(input("Enter an integer: "))
+    writeMemory(memory, memory[pc + 1], value)
+    return pc + 2
+
+def outputOp( memory, pc ):
+    p = getIoParameters( memory, pc )
+    print("CPU Output: ", p[1])
+    return pc + 2
+
+def jumpIfTrueOp( memory, pc ):
+    p = getJumpParameters(memory, pc)
+    if (p[1] != 0):
+        result = p[2]
+    else:
+        result = pc + 3
+    return result
+
+def jumpIfFalseOp( memory, pc ):
+    p = getJumpParameters(memory, pc)
+    if (p[1] == 0):
+        result = p[2]
+    else:
+        result = pc + 3
+    return result
+
+def lessThanOp( memory, pc ):
+    p = getAluParameters( memory, pc )
+    if (p[1] < p[2]):
+        writeMemory(memory, p[3], 1)
+    else:
+        writeMemory(memory, p[3], 0)
+    return pc + 4
+
+def equalsOp( memory, pc ):
+    p = getAluParameters( memory, pc )
+    if (p[1] == p[2]):
+        writeMemory(memory, p[3], 1)
+    else:
+        writeMemory(memory, p[3], 0)
+    return pc + 4
+
+def haltOp( memory, pc ):
+    print ("\nNormal halt at program counter", pc)
+    return -1
+
+def invalidOp( memory, pc ):
+    print ("\nHalting on invalid operation", memory[pc + 0], " at program counter", pc )
+    return -1
+
+def doInstruction( memory, pc, opcode ):
+    if (opcode == 0):
+        result = noOp(memory, pc)
+    elif (opcode == 1):
+        result = addOp(memory, pc)
+    elif (opcode == 2):
+        result = multiplyOp(memory, pc)
+    elif (opcode == 3):
+        result = inputOp(memory, pc)
+    elif (opcode == 4):
+        result = outputOp(memory, pc)
+    elif (opcode == 5):
+        result = jumpIfTrueOp(memory, pc)
+    elif (opcode == 6):
+        result = jumpIfFalseOp(memory, pc)
+    elif (opcode == 7):
+        result = lessThanOp(memory, pc)
+    elif (opcode == 8):
+        result = equalsOp(memory, pc)
+    elif (opcode == 99):
+        result = haltOp(memory, pc)
+    else:
+        result = invalidOp(memory, pc)
+    return result
+
+def opcodeLookup( opcode ):
+    switcher = {
+        0: "No-Op",
+        1: "Add",
+        2: "Multiply",
+        3: "Input",
+        4: "Output",
+        5: "Jump If True",
+        6: "Jump If False",
+        7: "Less Than",
+        8: "Equals",
+        99: "Halt"
+    }
+    return switcher.get( opcode, "Invalid operation")
 
 def cpu( program, startLocation, debug, dump ):
 
@@ -82,32 +170,21 @@ def cpu( program, startLocation, debug, dump ):
         print("In debug mode...")
 
     while True:
-        instruction = parseInstruction(memory, pc)
-        opcode = instruction["opcode"]
+        opcode = getOpcode(memory, pc)
 
         if (debug):
-            print("  ", pc, ": ", memory[pc + 0], memory[pc + 1], memory[pc + 2], memory[pc + 3], end='' )
-            print("  ", instruction["op"], instruction["p1Value"], instruction["p2Value"], " --> ", instruction["resultLocation"])
+            try:
+                print("  PC", pc, ": ", memory[pc + 0], memory[pc + 1], memory[pc + 2], memory[pc + 3], end='' )
+                print("  ", opcodeLookup(opcode))
+            except IndexError:
+                print("\nIndexError in debugging")
+                exit()
 
-        if (instruction["op"] == "Add"):
-            value = instruction["p1Value"] + instruction["p2Value"]
-            writeBack(memory, instruction["resultLocation"], value)
-        elif (instruction["op"] == "Multiply"):
-            value = instruction["p1Value"] * instruction["p2Value"]
-            writeBack(memory, instruction["resultLocation"], value)
-        elif (instruction["op"] == "Input"):
-            intValue = int(input("Enter an integer: "))
-            writeBack(memory, instruction["resultLocation"], intValue)
-        elif (instruction["op"] == "Output"):
-            print("CPU Output: ", memory[instruction["resultLocation"]])
-        elif (instruction["op"] == "Halt"):
-            print ("Normal halt at program counter ", pc, ", diagnostic code = ", memory[pc + 1])
-            break
-        else:
-            print ("Halted on illegal instruction: ", instruction)
+        nextPc = int(doInstruction(memory, pc, opcode))
+        if (nextPc < 0):
             break
 
-        pc = pc + instruction["increment"]
+        pc = nextPc
 
     if (dump):
         for p in range(0, len(memory)):
