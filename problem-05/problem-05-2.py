@@ -3,7 +3,7 @@
 import computer
 
 with open('input') as f:
-    data = f.read() + ",0,0,0,0,0"  
+    data = f.read()  
 
 program = [int(x) for x in data.split(",")]
 
